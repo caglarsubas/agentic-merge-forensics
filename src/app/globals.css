@@ -1,0 +1,155 @@
+:root {
+  --bg: #FAFAF7;
+  --panel: #FFFFFF;
+  --ink: #1C2420;
+  --sub: #57635C;
+  --faint: #8A948E;
+  --line: #E3E6DF;
+  --accent: #135A2A;
+  --accent-ink: #0E4721;
+  --c1: #1E7A3C;
+  --c2: #3A6FF7;
+  --c3: #E8591A;
+  --warn: #A94A12;
+  --bad: #B3261E;
+  --track: #EFF1EA;
+  --chipbg: #EEF3EC;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #121814;
+    --panel: #1A211C;
+    --ink: #E7ECE7;
+    --sub: #9FABA2;
+    --faint: #6E7972;
+    --line: #2A332C;
+    --accent: #5FBF7F;
+    --accent-ink: #7ACB94;
+    --c1: #3FA866;
+    --c2: #5B8DEE;
+    --c3: #DB6E33;
+    --warn: #E59B62;
+    --bad: #E5766B;
+    --track: #232B25;
+    --chipbg: #22301F;
+  }
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font: 15px/1.55 -apple-system, "SF Pro Text", "Segoe UI", Roboto, system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+h1, h2, h3 {
+  font-family: "Avenir Next", "Segoe UI", system-ui, sans-serif;
+  letter-spacing: -0.01em;
+  text-wrap: balance;
+}
+h1 { font-size: 27px; font-weight: 600; margin: 4px 0 6px; }
+h2 { font-size: 17px; font-weight: 600; margin: 0 0 10px; }
+
+.wrap { max-width: 1080px; margin: 0 auto; padding: 36px 24px 80px; }
+.eyebrow {
+  font-size: 11.5px; font-weight: 600; letter-spacing: 0.14em;
+  text-transform: uppercase; color: var(--accent);
+}
+.sub { color: var(--sub); max-width: 72ch; }
+.small { font-size: 12.5px; color: var(--sub); }
+.faint { color: var(--faint); }
+.mono { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-variant-numeric: tabular-nums; }
+
+.card {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 20px;
+  margin-top: 20px;
+}
+
+label { display: block; font-size: 12.5px; font-weight: 600; color: var(--sub); margin-bottom: 5px; }
+
+input[type="text"], input[type="number"], select {
+  width: 100%;
+  padding: 9px 11px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--bg);
+  color: var(--ink);
+  font: inherit;
+  font-size: 14px;
+}
+input:focus, select:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+.row { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 14px; }
+.field { margin-bottom: 4px; }
+
+button {
+  font: inherit;
+  font-weight: 600;
+  font-size: 14px;
+  padding: 9px 18px;
+  border-radius: 8px;
+  border: 1px solid var(--accent);
+  background: var(--accent);
+  color: #fff;
+  cursor: pointer;
+}
+button:hover:not(:disabled) { filter: brightness(1.08); }
+button:disabled { opacity: 0.55; cursor: not-allowed; }
+button.ghost { background: transparent; color: var(--accent-ink); }
+
+.chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.chip {
+  padding: 5px 12px;
+  border-radius: 99px;
+  border: 1px solid var(--line);
+  background: var(--bg);
+  font-size: 13px;
+  cursor: pointer;
+  user-select: none;
+  color: var(--ink);
+}
+.chip.on { background: var(--chipbg); border-color: var(--accent); color: var(--accent-ink); font-weight: 600; }
+
+table { border-collapse: collapse; width: 100%; font-size: 13.5px; }
+th {
+  font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--faint);
+  text-align: left; font-weight: 600; padding: 7px 10px 7px 0; border-bottom: 1px solid var(--line);
+}
+td { padding: 8px 10px 8px 0; border-bottom: 1px solid var(--line); }
+td.n, th.n { text-align: right; font-family: ui-monospace, "SF Mono", Menlo, monospace; font-variant-numeric: tabular-nums; }
+tr:last-child td { border-bottom: none; }
+a { color: var(--accent-ink); }
+
+.log {
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 12px;
+  background: var(--track);
+  border-radius: 8px;
+  padding: 12px 14px;
+  max-height: 260px;
+  overflow: auto;
+  white-space: pre-wrap;
+  color: var(--sub);
+  margin-top: 14px;
+}
+
+.badge { font-size: 12px; font-weight: 600; padding: 2px 9px; border-radius: 99px; }
+.badge.good { background: var(--chipbg); color: var(--accent-ink); }
+.badge.warn { background: transparent; border: 1px solid var(--warn); color: var(--warn); }
+.badge.bad { background: transparent; border: 1px solid var(--bad); color: var(--bad); }
+
+.err {
+  border: 1px solid var(--bad);
+  border-left-width: 3px;
+  border-radius: 8px;
+  padding: 12px 16px;
+  margin-top: 16px;
+  color: var(--bad);
+  font-size: 13.5px;
+}
