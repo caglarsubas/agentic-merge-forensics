@@ -154,3 +154,102 @@ export async function fetchPrs(
   });
   return new Map(results);
 }
+
+export interface RemoteRepo {
+  /** `owner/name`, exactly the form the analysis takes. */
+  slug: string;
+  owner: string;
+  name: string;
+  isPrivate: boolean;
+  isArchived: boolean;
+  isFork: boolean;
+  /** ISO timestamp of the last push, or null if GitHub omitted it. */
+  pushedAt: string | null;
+}
+
+export interface RepoListResult {
+  repos: RemoteRepo[];
+  /** True when the account has more repos than the page cap below. */
+  truncated: boolean;
+  /** Set when `gh` is missing, unauthenticated, or the API failed. */
+  error?: string;
+}
+
+interface RawRepo {
+  full_name?: string;
+  owner?: { login?: string };
+  name?: string;
+  private?: boolean;
+  archived?: boolean;
+  fork?: boolean;
+  pushed_at?: string | null;
+}
+
+const REPO_PAGE_SIZE = 100;
+/** Bounds the wait on accounts with thousands of repos; sorted by push date,
+ *  so what gets dropped is the long-dormant tail rather than anything active. */
+const REPO_MAX_PAGES = 3;
+
+/**
+ * Repositories the authenticated user can reach — their own, ones they
+ * collaborate on, and their orgs' — most recently pushed first.
+ *
+ * Errors are returned rather than thrown: the repo field stays usable by hand
+ * when `gh` is absent, so a failure here should degrade the picker, not the page.
+ */
+export async function listAccessibleRepos(): Promise<RepoListResult> {
+  if (!(await ghAvailable())) {
+    return { repos: [], truncated: false, error: "gh is not installed" };
+  }
+  if (!(await ghAuthenticated())) {
+    return { repos: [], truncated: false, error: "gh is not authenticated" };
+  }
+
+  const repos: RemoteRepo[] = [];
+  let truncated = false;
+
+  for (let page = 1; page <= REPO_MAX_PAGES; page++) {
+    const result = await run("gh", [
+      "api",
+      "-H",
+      "Accept: application/vnd.github+json",
+      `/user/repos?per_page=${REPO_PAGE_SIZE}&page=${page}&sort=pushed&affiliation=owner,collaborator,organization_member`,
+    ]);
+    if (result.code !== 0) {
+      return {
+        repos,
+        truncated,
+        error: result.stderr.trim().slice(0, 200) || "gh api failed",
+      };
+    }
+
+    let raw: RawRepo[];
+    try {
+      raw = JSON.parse(result.stdout) as RawRepo[];
+    } catch {
+      return { repos, truncated, error: "could not parse gh api output" };
+    }
+    if (!Array.isArray(raw)) return { repos, truncated, error: "unexpected gh api output" };
+
+    for (const entry of raw) {
+      const slug = entry.full_name ?? "";
+      const owner = entry.owner?.login ?? slug.split("/")[0] ?? "";
+      const name = entry.name ?? slug.split("/")[1] ?? "";
+      if (!owner || !name) continue;
+      repos.push({
+        slug: slug || `${owner}/${name}`,
+        owner,
+        name,
+        isPrivate: Boolean(entry.private),
+        isArchived: Boolean(entry.archived),
+        isFork: Boolean(entry.fork),
+        pushedAt: entry.pushed_at ?? null,
+      });
+    }
+
+    if (raw.length < REPO_PAGE_SIZE) return { repos, truncated: false };
+    if (page === REPO_MAX_PAGES) truncated = true;
+  }
+
+  return { repos, truncated };
+}
