@@ -1,7 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { RunSummary } from "@/store/store";
+import type { RemoteRepo } from "@/engine/github";
 
 type WindowMode = "count" | "since";
 
@@ -18,6 +19,11 @@ export default function Home() {
   const [since, setSince] = useState("30d");
   const [allCoders, setAllCoders] = useState<string[]>([]);
   const [selectedCoders, setSelectedCoders] = useState<string[]>([]);
+  const [remoteRepos, setRemoteRepos] = useState<RemoteRepo[]>([]);
+  const [repoPickerState, setRepoPickerState] = useState<"loading" | "ready" | "failed">(
+    "loading",
+  );
+  const [repoPickerNote, setRepoPickerNote] = useState<string | null>(null);
   const [running, setRunning] = useState(false);
   const [log, setLog] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -38,6 +44,25 @@ export default function Home() {
       .then((r) => r.json())
       .then((d: { coders: string[] }) => setAllCoders(d.coders))
       .catch(() => setAllCoders([]));
+
+    void fetch("/api/repos", { cache: "no-store" })
+      .then((r) => r.json())
+      .then((d: { repos: RemoteRepo[]; truncated: boolean; error?: string }) => {
+        setRemoteRepos(d.repos ?? []);
+        if (d.error) {
+          setRepoPickerState("failed");
+          setRepoPickerNote(d.error);
+        } else {
+          setRepoPickerState("ready");
+          setRepoPickerNote(
+            d.truncated ? "most recently pushed only — type others by hand" : null,
+          );
+        }
+      })
+      .catch(() => {
+        setRepoPickerState("failed");
+        setRepoPickerNote("could not reach the repo list");
+      });
   }, [loadRuns]);
 
   useEffect(() => {
@@ -48,6 +73,33 @@ export default function Home() {
     setSelectedCoders((current) =>
       current.includes(coder) ? current.filter((c) => c !== coder) : [...current, coder],
     );
+  }
+
+  /** What is already in the field, so the picker can mark those entries. */
+  const chosenRepos = useMemo(
+    () => new Set(repos.split(/[\s,]+/).map((repo) => repo.trim()).filter(Boolean)),
+    [repos],
+  );
+
+  /** Owner-grouped for the dropdown, each group keeping the push-date order. */
+  const reposByOwner = useMemo(() => {
+    const groups = new Map<string, RemoteRepo[]>();
+    for (const repo of remoteRepos) {
+      const group = groups.get(repo.owner);
+      if (group) group.push(repo);
+      else groups.set(repo.owner, [repo]);
+    }
+    return [...groups];
+  }, [remoteRepos]);
+
+  /** The picker appends rather than replaces — a run can span several repos. */
+  function addRepo(slug: string) {
+    if (!slug) return;
+    setRepos((current) => {
+      const list = current.split(/[\s,]+/).map((repo) => repo.trim()).filter(Boolean);
+      if (list.includes(slug)) return current;
+      return [...list, slug].join(", ");
+    });
   }
 
   async function startRun() {
@@ -126,6 +178,50 @@ export default function Home() {
       <div className="card">
         <h2>New run</h2>
         <div className="field">
+          <label htmlFor="repo-picker">
+            Your repositories{" "}
+            {repoPickerState === "loading" && <span className="faint">— loading…</span>}
+            {repoPickerState === "ready" && remoteRepos.length > 0 && (
+              <span className="faint">
+                — {remoteRepos.length}
+                {repoPickerNote ? `, ${repoPickerNote}` : ""}
+              </span>
+            )}
+            {repoPickerState === "failed" && (
+              <span className="faint">— {repoPickerNote}, type them below</span>
+            )}
+          </label>
+          <select
+            id="repo-picker"
+            value=""
+            onChange={(event) => addRepo(event.target.value)}
+            disabled={running || remoteRepos.length === 0}
+          >
+            <option value="">
+              {remoteRepos.length > 0 ? "Add a repository…" : "No repositories available"}
+            </option>
+            {reposByOwner.map(([owner, ownerRepos]) => (
+              <optgroup key={owner} label={owner}>
+                {ownerRepos.map((repo) => {
+                  const tags = [
+                    repo.isPrivate ? "private" : null,
+                    repo.isFork ? "fork" : null,
+                    repo.isArchived ? "archived" : null,
+                  ].filter(Boolean);
+                  return (
+                    <option key={repo.slug} value={repo.slug}>
+                      {chosenRepos.has(repo.slug) ? "✓ " : ""}
+                      {repo.name}
+                      {tags.length > 0 ? ` · ${tags.join(", ")}` : ""}
+                    </option>
+                  );
+                })}
+              </optgroup>
+            ))}
+          </select>
+        </div>
+
+        <div className="field" style={{ marginTop: 14 }}>
           <label htmlFor="repos">Repositories</label>
           <input
             id="repos"
