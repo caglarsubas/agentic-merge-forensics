@@ -30,5 +30,30 @@ services:
       start_period: 20s
       retries: 3
 
+  # The poller that keeps the activity feed current. Same image, same volume,
+  # different entrypoint — it writes the event log that `web` only reads, which
+  # is why it is a separate service rather than a thread inside the server:
+  # Next.js can start several worker processes, and several pollers would each
+  # spend the same API budget on the same repos.
+  watcher:
+    build:
+      context: .
+    image: agentic-merge-forensics:local
+    # tsx directly rather than bin/merge-forensics.mjs, which resolves tsx from
+    # ./node_modules — where a production install does not keep it.
+    command: ["tsx", "src/cli/main.ts", "feed", "--watch"]
+    environment:
+      MERGE_FORENSICS_HOME: /data
+      GH_TOKEN: ${GH_TOKEN:-}
+      GITHUB_TOKEN: ${GITHUB_TOKEN:-}
+      # Seconds between cycles. Only repos whose pushed_at moved are polled, so
+      # a quiet watchlist costs one API call per cycle.
+      MERGE_FORENSICS_FEED_INTERVAL: ${MERGE_FORENSICS_FEED_INTERVAL:-60}
+    volumes:
+      - forensics-data:/data
+    depends_on:
+      - web
+    restart: unless-stopped
+
 volumes:
   forensics-data:

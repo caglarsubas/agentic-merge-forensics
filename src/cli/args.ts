@@ -17,6 +17,8 @@ export interface ParsedArgs {
   offline: boolean;
   json: boolean;
   once: boolean;
+  /** feed: keep polling rather than running a single cycle. */
+  watch: boolean;
   help: boolean;
 }
 
@@ -55,6 +57,7 @@ export function parseArgs(argv: readonly string[], now: Date = new Date()): Pars
     offline: false,
     json: false,
     once: false,
+    watch: false,
     help: false,
   };
 
@@ -111,6 +114,9 @@ export function parseArgs(argv: readonly string[], now: Date = new Date()): Pars
       case "--json":
         parsed.json = true;
         break;
+      case "--watch":
+        parsed.watch = true;
+        break;
       case "--once":
         parsed.once = true;
         break;
@@ -145,6 +151,7 @@ export const HELP = `merge-forensics — merge health for repos worked by coding
 USAGE
   merge-forensics run   --repo owner/name [--repo other/name] [options]
   merge-forensics watch --repo owner/name [--every 25] [--interval 30]
+  merge-forensics feed  [--watch]
   merge-forensics list  [--json]
   merge-forensics serve
 
@@ -165,6 +172,13 @@ BEHAVIOUR
       --every <n>        (watch) alert once this many new merges accumulate
       --interval <min>   (watch) how often to poll
       --once             (watch) check a single time and exit
+      --watch            (feed) keep polling; otherwise one cycle and exit
+
+FEED
+  The activity feed follows the repos on its watchlist and records what the
+  agents do: pull requests opening and landing, direct pushes, conflicts and CI.
+  Manage the watchlist in the web UI. Poll interval comes from
+  MERGE_FORENSICS_FEED_INTERVAL (seconds, default 60).
 
 Reports and state live in ~/.merge-forensics (override with MERGE_FORENSICS_HOME).
 `;
