@@ -1,0 +1,34 @@
+name: agentic-merge-forensics
+
+services:
+  web:
+    build:
+      context: .
+    image: agentic-merge-forensics:local
+    ports:
+      - "3737:3737"
+    environment:
+      # Clones, reports and state land on the volume below rather than in the
+      # container's home, so they survive a rebuild. First run per repo is the
+      # slow one; after that the mirror is fetched incrementally.
+      MERGE_FORENSICS_HOME: /data
+      # Passed through from your shell or a .env file. Without it the run still
+      # produces every git-derived metric and records a warning.
+      GH_TOKEN: ${GH_TOKEN:-}
+      GITHUB_TOKEN: ${GITHUB_TOKEN:-}
+    volumes:
+      - forensics-data:/data
+    restart: unless-stopped
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://127.0.0.1:3737/').then(r => process.exit(r.ok ? 0 : 1), () => process.exit(1))"
+      interval: 30s
+      timeout: 5s
+      start_period: 20s
+      retries: 3
+
+volumes:
+  forensics-data:
