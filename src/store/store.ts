@@ -6,17 +6,11 @@
  * native SQLite dependency would be one more thing to build per platform. The
  * volumes here are small — one summary per run.
  */
-import {
-  existsSync,
-  readFileSync,
-  readdirSync,
-  renameSync,
-  unlinkSync,
-  writeFileSync,
-} from "node:fs";
+import { existsSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { ensureDir, ensureHomeLayout, reportsDir, stateDir } from "../engine/paths";
 import type { ForensicsReport } from "../engine/types";
+import { readJson, writeJson } from "./json";
 
 export interface RunSummary {
   id: string;
@@ -52,28 +46,6 @@ function runsIndexPath(): string {
 
 function watermarksPath(): string {
   return join(stateDir(), "watermarks.json");
-}
-
-function readJson<T>(path: string, fallback: T): T {
-  if (!existsSync(path)) return fallback;
-  try {
-    return JSON.parse(readFileSync(path, "utf8")) as T;
-  } catch {
-    // A truncated file from an interrupted write should not brick the tool.
-    return fallback;
-  }
-}
-
-function writeJson(path: string, value: unknown): void {
-  // Write-then-rename so a crash mid-write cannot leave a half-file behind.
-  const temporary = `${path}.tmp`;
-  writeFileSync(temporary, `${JSON.stringify(value, null, 2)}\n`, "utf8");
-  try {
-    renameSync(temporary, path);
-  } catch {
-    writeFileSync(path, `${JSON.stringify(value, null, 2)}\n`, "utf8");
-    if (existsSync(temporary)) unlinkSync(temporary);
-  }
 }
 
 /** A stable id per run: sortable by time, unique per repo set. */
