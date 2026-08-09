@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { RunSummary } from "@/store/store";
 import type { RemoteRepo } from "@/engine/github";
@@ -172,7 +173,7 @@ export default function Home() {
       <p className="sub">
         Conflict rate, cross-agent overwrites, churn and file contention — measured from git
         itself, by replaying merges and attributing every rewritten line to the PR that wrote
-        it. Everything stays on this machine.
+        it. Everything stays on this machine. <Link href="/feed">Live activity →</Link>
       </p>
 
       <div className="card">

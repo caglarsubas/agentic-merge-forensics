@@ -20,6 +20,9 @@ import {
   type RunSummary,
 } from "../store/store";
 import { decideTrigger } from "../scheduler/trigger";
+import { runCycle } from "../feed/poller";
+import { watch } from "../feed/supervisor";
+import { readWatchlist } from "../store/feed-store";
 import { sendAlert } from "../alerts/notify";
 import { ArgError, HELP, parseArgs, type ParsedArgs } from "./args";
 
@@ -161,6 +164,43 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve_) => setTimeout(resolve_, ms));
 }
 
+/**
+ * The activity feed. One cycle by default so it is easy to run by hand and from
+ * cron; `--watch` is the long-running form the container uses.
+ */
+async function cmdFeed(args: ParsedArgs): Promise<number> {
+  const empty = readWatchlist().length === 0;
+  const intervalMs = Math.max(15, Number(process.env.MERGE_FORENSICS_FEED_INTERVAL ?? 60)) * 1000;
+
+  if (args.watch && !args.once) {
+    // Deliberately does NOT exit on an empty watchlist. The watcher starts with
+    // the container, before anyone has picked a repo, and a process that exits
+    // under `restart: unless-stopped` becomes a restart loop rather than a
+    // service waiting for work.
+    if (empty) out("Watchlist is empty — waiting. Add repositories at /feed.");
+    await watch({ intervalMs, log: out });
+    return 0;
+  }
+
+  if (empty) {
+    out("Nothing on the watchlist yet — add repositories in the web UI at /feed.");
+    return 0;
+  }
+
+  const status = await runCycle();
+  if (args.json) {
+    out(JSON.stringify(status, null, 2));
+    return 0;
+  }
+  out(
+    `polled ${status.polled.length}, skipped ${status.skipped} unchanged` +
+      (status.deferred > 0 ? `, deferred ${status.deferred}` : "") +
+      ` — ${status.newEvents} new event(s) in ${(status.durationMs / 1000).toFixed(1)}s`,
+  );
+  for (const error of status.errors) out(`  ${error.slug}: ${error.message}`);
+  return status.errors.length > 0 ? 1 : 0;
+}
+
 async function main(): Promise<number> {
   let args: ParsedArgs;
   try {
@@ -181,6 +221,8 @@ async function main(): Promise<number> {
         return await cmdRun(args);
       case "watch":
         return await cmdWatch(args);
+      case "feed":
+        return await cmdFeed(args);
       case "list":
         return cmdList(args);
       case "serve":

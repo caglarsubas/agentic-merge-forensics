@@ -80,6 +80,56 @@ npm run dev     # http://localhost:3737
 Pick repos, window and coders; progress streams live while it runs; past runs
 are listed with their headline numbers and a link to each report.
 
+### Live activity feed
+
+The analysis above is a snapshot you ask for. The feed is the standing version:
+a watcher polls the repos on its watchlist and records what the agents do as it
+arrives — pull requests opening and landing, direct pushes to the trunk,
+conflicts appearing, CI going red.
+
+```bash
+docker compose up -d          # starts the UI and the watcher together
+```
+
+Then open http://localhost:3737/feed, pick repos to watch, and leave it. Each
+row carries the time it arrived, which agent produced it, whether it conflicts,
+and what CI says.
+
+Running it by hand instead of in a container:
+
+```bash
+npx merge-forensics feed            # one cycle, then exit — good for cron
+npx merge-forensics feed --watch    # keep polling
+```
+
+**What it costs.** One API call lists every repo you can see with its
+`pushed_at`, which is enough to decide that most of the watchlist has not
+changed. Only repos that actually moved cost the two `gh` calls that matter, so
+a quiet watchlist of any size costs about two calls per cycle. A cycle is capped
+at 12 repos and defers the rest to the next one rather than running long; the
+page says when that happened instead of quietly under-reporting. Poll interval
+is `MERGE_FORENSICS_FEED_INTERVAL` seconds, default 60.
+
+Because `pushed_at` does not move for everything worth noticing — a PR opened
+from a fork, a CI run finishing — a rotating slice of the watchlist is polled in
+full each cycle regardless, so nothing can be starved by a timestamp that never
+advances.
+
+**What it is honest about.** Conflict state comes from GitHub's own
+mergeability verdict, which is computed lazily: while GitHub is still thinking
+it reports `UNKNOWN`, and the feed shows that as neither clean nor conflicting
+rather than guessing. Transitions into or out of `UNKNOWN` are never reported as
+a conflict appearing or clearing. A repo added to the watchlist is baselined on
+its first cycle rather than replayed, so adding a busy repo does not announce
+forty old pull requests as breaking news — the cost is that the very first pull
+request in a repo that had none when you added it goes unannounced, though
+everything that happens to it afterwards is caught.
+
+Agent attribution for pull requests uses the branch prefix and the author login;
+commit trailers are only available for direct pushes, because `gh pr list` does
+not return commit bodies. Rows attributed by nothing stronger than a login are
+marked, so a human PR is never silently counted as an agent's.
+
 ### Past runs
 
 ```bash
@@ -95,6 +145,7 @@ Everything lives under `~/.merge-forensics` (override with
 clones/     bare mirrors, incrementally fetched — first run is the slow one
 reports/    one directory per run: report.html + report.json
 state/      run index, scheduler watermarks, alerts.log
+state/feed/ watchlist, poll watermarks, the append-only event log
 ```
 
 Reports are self-contained HTML with no external requests, so they keep working

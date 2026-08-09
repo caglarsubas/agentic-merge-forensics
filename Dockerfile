@@ -41,8 +41,19 @@ RUN set -eux; \
 COPY package.json package-lock.json ./
 RUN npm ci --omit=dev && npm cache clean --force
 
+# The CLI is TypeScript run through tsx rather than a build step, so the watcher
+# service needs tsx at runtime even though the web service does not. Installed
+# globally rather than into /app/node_modules: a production `npm install` prunes
+# anything the lockfile does not list as a dependency, which quietly removes it.
+# Keeping it out of the dev tree avoids dragging in eslint, typescript and vitest.
+RUN npm install -g tsx@^4.21.0 && npm cache clean --force
+
 COPY --from=build /app/.next ./.next
 COPY next.config.mjs ./
+# The CLI is TypeScript compiled on the fly, so the source is the artifact.
+COPY src ./src
+COPY bin ./bin
+COPY tsconfig.json ./
 
 # Mirror clones, reports and state. Created here so the named volume inherits
 # the ownership rather than mounting in as root-owned.
