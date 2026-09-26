@@ -53,12 +53,14 @@ class Reader {
   private readonly sentenceOf: number[] = [];
   private readonly topics: Array<Pr[][]> = [];
   private readonly aboutGroups: boolean[] = [];
+  /** PR numbers the text names, and the sentence each is in. */
+  readonly refs: Array<{ number: number; repo: string | null; sentence: number }> = [];
 
   constructor(
     text: string,
     readonly facts: SummaryFacts,
-    private readonly conflicting: Pr[],
-    private readonly failing: Pr[],
+    readonly conflicting: Pr[],
+    readonly failing: Pr[],
   ) {
     const coders = new Set([...conflicting, ...failing].map((pr) => pr.coder));
     for (const filter of facts.filtersApplied) {
@@ -78,11 +80,10 @@ class Reader {
       sentence++;
       words = new Set();
     };
-    const refs: Array<{ number: number; repo: string | null; sentence: number }> = [];
     for (const token of tokenise(text, [...repos], [...coders])) {
       if (token.kind === "ref") {
         const before = this.tokens.at(-1);
-        refs.push({ number: token.number, repo: before?.kind === "repo" ? before.name : null, sentence });
+        this.refs.push({ number: token.number, repo: before?.kind === "repo" ? before.name : null, sentence });
         continue;
       }
       this.tokens.push(token);
@@ -93,8 +94,8 @@ class Reader {
     close();
 
     // "acme/web#12 is failing CI" must name a PR that is failing CI.
-    for (const ref of refs) {
-      const matches = (pr: Pr) => pr.number === ref.number && (ref.repo === null || pr.repo === ref.repo);
+    for (const ref of this.refs) {
+      const matches = (pr: Pr) => refersTo(ref, pr);
       if (this.topics[ref.sentence].some((group) => group.some(matches))) continue;
       const label = `${ref.repo ?? ""}#${ref.number}`;
       this.problems.add(
@@ -108,6 +109,11 @@ class Reader {
   /** The PR groups the sentence containing token `i` is talking about. */
   groupsAt(i: number): Pr[][] {
     return this.topics[this.sentenceOf[i]] ?? [];
+  }
+
+  /** The PR groups sentence number `sentence` is talking about. */
+  topicOf(sentence: number): Pr[][] {
+    return this.topics[sentence] ?? [];
   }
 
   /** Whether that sentence is about conflicts or CI at all, rather than activity. */
@@ -153,6 +159,7 @@ export function checkSummary(text: string, facts: SummaryFacts): string[] {
   checkTotals(reader);
   checkZeroClaims(normalised, facts, reader.problems);
   checkInventedNames(normalised, reader);
+  checkCompleteness(reader);
   return [...reader.problems];
 }
 
@@ -222,6 +229,10 @@ function tokenise(text: string, repos: string[], coders: string[]): Token[] {
     else tokens.push({ kind: "stop", end: /[.!?]/.test(raw) });
   }
   return tokens;
+}
+
+function refersTo(ref: { number: number; repo: string | null }, pr: Pr): boolean {
+  return pr.number === ref.number && (ref.repo === null || pr.repo === ref.repo);
 }
 
 function escape(value: string): string {
@@ -503,6 +514,37 @@ function checkInventedNames(text: string, reader: Reader): void {
   for (const [, name] of text.matchAll(/\b(?:from|by)\s+([a-z][\w.-]*\d[\w.-]*)/g)) {
     const bare = name.replace(/[.-]+$/, "");
     if (!known.has(bare)) reader.problems.add(`"${bare}" is not a coder or repo in the data`);
+  }
+}
+
+/**
+ * Every coder with a flagged PR has to be named in a sentence about that group,
+ * or have one of those PRs named by number there. Dropping someone reads as a
+ * clean bill of health for their work: "five from codex are in conflict", with
+ * refik-ergun's conflict silently left out.
+ */
+function checkCompleteness(reader: Reader): void {
+  const groups = [
+    [reader.conflicting, "conflicting"],
+    [reader.failing, "failing-CI"],
+  ] as const;
+  for (const [group, label] of groups) {
+    for (const coder of codersIn(group)) {
+      const named = reader.tokens.some(
+        (token, i) => token.kind === "coder" && token.name === coder && reader.groupsAt(i).includes(group),
+      );
+      const referenced = reader.refs.some(
+        (ref) =>
+          reader.topicOf(ref.sentence).includes(group) &&
+          group.some((pr) => pr.coder === coder && refersTo(ref, pr)),
+      );
+      if (named || referenced) continue;
+      const own = group.filter((pr) => pr.coder === coder);
+      const repos = [...new Set(own.map((pr) => pr.repo))].join(", ");
+      reader.problems.add(
+        `${coder}'s ${label} ${own.length === 1 ? "PR is" : `${own.length} PRs are`} left out (${repos})`,
+      );
+    }
   }
 }
 

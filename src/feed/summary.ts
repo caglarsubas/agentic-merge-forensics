@@ -292,7 +292,7 @@ export async function writeSummary(
           `That summary has errors:\n${problems.map((p) => `- ${p}`).join("\n")}\n` +
           "Write it again. Take every number from conflictingNow.description and " +
           "failingCiNow.description exactly as written there, with the same coder and " +
-          "repos, and state no number the data does not give.",
+          "repos, name every coder they list, and state no number the data does not give.",
       },
     );
   }
