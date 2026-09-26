@@ -153,3 +153,157 @@ a { color: var(--accent-ink); }
   color: var(--bad);
   font-size: 13.5px;
 }
+
+/* ---- dashboard ------------------------------------------------------------
+   The categorical steps come from src/report/theme.ts, where they were checked
+   with a CVD-separation validator against each surface rather than picked by
+   eye. They are duplicated here rather than imported because that module builds
+   a CSS string for the standalone report; if you change one, change both. */
+:root { --c4: #8C4A9E; }
+@media (prefers-color-scheme: dark) { :root { --c4: #AC74C4; } }
+
+.tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
+.tile {
+  background: var(--panel); border: 1px solid var(--line);
+  border-radius: 10px; padding: 12px 14px;
+}
+.tile .v {
+  font-family: "Avenir Next", "Segoe UI", system-ui, sans-serif;
+  font-size: 25px; font-weight: 600; line-height: 1.1;
+  font-variant-numeric: tabular-nums; letter-spacing: -0.01em;
+}
+.tile .k { font-size: 12px; color: var(--sub); margin-top: 3px; }
+/* Status tiles carry a word as well as a colour — a tile that is only red says
+   nothing to a reader who cannot see red, or to one glancing past it. */
+.tile.bad .v { color: var(--bad); }
+.tile.warn .v { color: var(--warn); }
+.tile.good .v { color: var(--accent-ink); }
+
+/* Liveness. The dot is never the only signal: the text beside it says the same
+   thing, because a pulsing dot means nothing on its own. */
+.dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; }
+.dot.live { background: var(--accent); animation: pulse 2.4s ease-in-out infinite; }
+.dot.idle { background: var(--faint); }
+.dot.stale { background: var(--warn); }
+@keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
+@media (prefers-reduced-motion: reduce) { .dot.live { animation: none; } }
+
+.barrow { display: grid; grid-template-columns: 92px 1fr 34px; align-items: center; gap: 10px; margin-bottom: 6px; }
+.bartrack { display: block; background: var(--track); border-radius: 4px; height: 9px; overflow: hidden; }
+/* 4px rounded data-end anchored to the baseline; the fill starts square. */
+.barfill { display: block; height: 100%; border-radius: 0 4px 4px 0; }
+
+/* Histogram. Each column is a button so it is hoverable, clickable and
+   reachable by keyboard; the segments inside are one per coding platform, with
+   a 2px gap so adjacent fills never read as one block. */
+.chart { position: relative; }
+.hours { display: flex; align-items: flex-end; gap: 2px; height: 88px; }
+.hour {
+  flex: 1; display: flex; flex-direction: column-reverse; gap: 2px;
+  background: none; border: 0; padding: 0; min-height: 3px; cursor: pointer;
+  border-radius: 3px 3px 0 0;
+}
+.hour .seg { display: block; width: 100%; border-radius: 3px 3px 0 0; }
+/* Zero events and no-data-recorded are different facts and must not share a
+   mark: a flat track means "nothing happened", the hatch means "the feed was
+   not watching yet". */
+.hour.zero { background: var(--track); }
+.hour.nodata {
+  background: repeating-linear-gradient(
+    45deg, var(--track), var(--track) 3px, transparent 3px, transparent 6px
+  );
+}
+.hour:hover, .hour:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.hour:focus { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.tip {
+  /* Below the bars, not above: the chart sits at the top of its card, so a tip
+     above it would cover the status tiles rather than the caption. */
+  position: absolute; top: calc(100% + 10px); transform: translateX(-50%);
+  background: var(--panel); border: 1px solid var(--line); border-radius: 8px;
+  padding: 8px 10px; font-size: 12px; line-height: 1.45;
+  /* Bounded so the clamp below can keep it inside the card whatever it says. */
+  max-width: min(220px, 100%); white-space: normal;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.14); pointer-events: none; z-index: 5;
+}
+/* The tip wraps between rows but never inside one — a name split from its
+   count reads as two facts instead of one. */
+.tip > div { white-space: nowrap; }
+.tip .tip-k { color: var(--faint); }
+.tip .swatch {
+  display: inline-block; width: 8px; height: 8px; border-radius: 2px;
+  margin-right: 5px; vertical-align: baseline;
+}
+
+/* The agent bars double as the histogram's legend, so they are clickable too:
+   selecting one is the same act as filtering by it. */
+.barrow.clickable { cursor: pointer; background: none; border: 0; padding: 2px 0; width: 100%; text-align: left; }
+.barrow.clickable:hover .barlabel { color: var(--accent-ink); }
+.barrow.on .barlabel { font-weight: 600; color: var(--accent-ink); }
+.barrow.clickable:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
+
+/* A new row should be noticeable without being a distraction. */
+@keyframes arrive { from { background: var(--chipbg); } to { background: transparent; } }
+tr.fresh td { animation: arrive 2.5s ease-out; }
+@media (prefers-reduced-motion: reduce) { tr.fresh td { animation: none; } }
+
+/* ---- filtering ------------------------------------------------------------
+   The time window is the primary control, so it sits in the open. Everything
+   else is a refinement and lives behind a disclosure — a native <details>,
+   which is keyboard-navigable and works before hydration. */
+.toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.adv { margin-top: 12px; border-top: 1px solid var(--line); padding-top: 12px; }
+.adv > summary {
+  cursor: pointer; font-size: 12.5px; font-weight: 600; color: var(--sub);
+  list-style: none; display: inline-flex; align-items: center; gap: 6px;
+  user-select: none;
+}
+.adv > summary::-webkit-details-marker { display: none; }
+.adv > summary::before { content: "▸"; font-size: 10px; color: var(--faint); }
+.adv[open] > summary::before { content: "▾"; }
+.adv > summary:hover { color: var(--ink); }
+/* Count of active refinements, so a collapsed panel never hides a filter that
+   is silently removing rows. */
+.adv .count {
+  background: var(--chipbg); color: var(--accent-ink); border-radius: 99px;
+  padding: 1px 7px; font-size: 11px;
+}
+.advbody { margin-top: 12px; }
+.custom { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 10px; }
+.custom input { width: auto; }
+
+/* ---- event rows ---------------------------------------------------------- */
+.ev-title { display: block; }
+.ev-meta { display: block; font-size: 12px; color: var(--faint); margin-top: 2px; }
+.ev-meta a { color: var(--faint); text-decoration: underline; text-underline-offset: 2px; }
+.ev-meta a:hover { color: var(--accent-ink); }
+.ext { white-space: nowrap; text-decoration: none; font-size: 13px; }
+td.ext-cell { text-align: right; }
+
+/* ---- searchable repository picker ----------------------------------------
+   A native <select> cannot be typed into, and the list is 161 entries long.
+   This is an input plus a filtered listbox: the same keyboard affordances,
+   minus the scrolling. */
+.combo { position: relative; }
+.combo-list {
+  position: absolute; z-index: 20; top: calc(100% + 4px); left: 0; right: 0;
+  max-height: 300px; overflow-y: auto;
+  background: var(--panel); border: 1px solid var(--line); border-radius: 10px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.16); padding: 4px;
+}
+.combo-item {
+  display: block; width: 100%; text-align: left; padding: 7px 9px;
+  background: none; border: 0; border-radius: 6px; cursor: pointer;
+  font: inherit; font-size: 13.5px; color: var(--ink);
+}
+.combo-item:hover, .combo-item.active { background: var(--chipbg); }
+.combo-item .tagline { color: var(--faint); font-size: 12px; }
+.combo-note { padding: 8px 9px; font-size: 12.5px; color: var(--sub); }
+
+/* ---- executive summary ---------------------------------------------------
+   Set apart from the metrics because it is generated prose, not a measurement:
+   it should never be mistaken for one of the counted numbers above it. */
+.summary { border-left: 3px solid var(--accent); }
+.summary .body { font-size: 15.5px; line-height: 1.55; color: var(--ink); }
+.summary .body.pending { color: var(--faint); }
+.summary-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }

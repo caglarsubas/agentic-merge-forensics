@@ -177,13 +177,13 @@ async function cmdFeed(args: ParsedArgs): Promise<number> {
     // the container, before anyone has picked a repo, and a process that exits
     // under `restart: unless-stopped` becomes a restart loop rather than a
     // service waiting for work.
-    if (empty) out("Watchlist is empty — waiting. Add repositories at /feed.");
+    if (empty) out("Watchlist is empty — waiting. Add repositories in the web UI.");
     await watch({ intervalMs, log: out });
     return 0;
   }
 
   if (empty) {
-    out("Nothing on the watchlist yet — add repositories in the web UI at /feed.");
+    out("Nothing on the watchlist yet — add repositories in the web UI.");
     return 0;
   }
 

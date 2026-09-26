@@ -77,8 +77,10 @@ rather drive the schedule from cron or launchd.
 npm run dev     # http://localhost:3737
 ```
 
-Pick repos, window and coders; progress streams live while it runs; past runs
-are listed with their headline numbers and a link to each report.
+The activity dashboard is the landing page; the forensic analysis lives at
+`/analysis`, linked from it. There you pick repos, window and coders; progress
+streams live while it runs, and past runs are listed with their headline
+numbers and a link to each report.
 
 ### Live activity feed
 
@@ -91,7 +93,7 @@ conflicts appearing, CI going red.
 docker compose up -d          # starts the UI and the watcher together
 ```
 
-Then open http://localhost:3737/feed, pick repos to watch, and leave it. Each
+Then open http://localhost:3737, pick repos to watch, and leave it. Each
 row carries the time it arrived, which agent produced it, whether it conflicts,
 and what CI says.
 
@@ -101,6 +103,55 @@ Running it by hand instead of in a container:
 npx merge-forensics feed            # one cycle, then exit — good for cron
 npx merge-forensics feed --watch    # keep polling
 ```
+
+**Executive summary.** The dashboard opens with two or three sentences of plain
+English describing what has happened in the selected window, written by a local
+model. It is given a small set of already-computed facts rather than raw events
+— it is there to phrase, not to count, because a model asked to tally forty
+events will occasionally get it wrong, and a confident wrong number in a summary
+is worse than no summary.
+
+It is off by default unless a model is reachable:
+
+```bash
+MERGE_FORENSICS_LLM_URL=http://127.0.0.1:11434 MERGE_FORENSICS_LLM_MODEL=gemma4:26b npm run dev
+```
+
+`MERGE_FORENSICS_LLM_URL` ending in `/v1` is treated as an OpenAI-compatible
+gateway (`MERGE_FORENSICS_LLM_KEY` for a bearer token); anything else is Ollama's
+native API. Override with `MERGE_FORENSICS_LLM_API=openai|ollama`.
+
+The compose default routes through the local inference engine on its own
+`merge-forensics` tenant, so this dashboard's usage is accounted separately and
+cannot exhaust another product's scheduler slot. The key is read out of the
+engine's key file at launch, so it never lands in this repo:
+
+```bash
+MERGE_FORENSICS_LLM_KEY=$(node -pe 'require("/path/to/llm_inference_engine_v1/.auth_keys.json").find(k=>k.tenant==="merge-forensics").key') GH_TOKEN=$(gh auth token) docker compose up -d
+```
+
+That accounting is not free, and the numbers are worth knowing. The engine
+serves the identical model, but its OpenAI-compatible path cannot switch the
+reasoning trace off — `reasoning_effort: "none"` and
+`chat_template_kwargs.thinking=false` are both accepted and neither works, so
+`reasoning_content` returns empty while 1500-2700 completion tokens are spent on
+a two-sentence answer. That is 16-45s per summary against Ollama's ~1.1s, and
+the tenant scheduler's 30s queue timeout means two summaries arriving together
+can still collide even on a private tenant. Point `MERGE_FORENSICS_LLM_URL` at
+`http://host.docker.internal:11434` to use Ollama directly when latency matters
+more than accounting.
+
+Summaries are cached on a hash of the derived facts, not on the request. The
+dashboard re-polls every ten seconds, and re-running a 26B model each time to
+describe data that has not moved would be waste; a changed window, a changed
+filter or a new event misses the cache and re-asks, while a quiet poll is free.
+
+Two things worth knowing. Reasoning models need their trace turned off or they
+spend the whole token budget thinking and return nothing — measured with
+gemma4:26b at 900 tokens of reasoning and an empty answer, which is why the
+Ollama path sends `think: false`. And a model bound to `127.0.0.1` is not
+reachable from the container: run it on `0.0.0.0` first, or the panel reports
+that it could not reach one and the rest of the page carries on.
 
 **What it costs.** One API call lists every repo you can see with its
 `pushed_at`, which is enough to decide that most of the watchlist has not

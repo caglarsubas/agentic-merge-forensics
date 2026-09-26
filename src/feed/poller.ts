@@ -49,6 +49,10 @@ export interface CycleOptions {
 
 interface Hydrated {
   slug: string;
+  /** Whether the PR list itself came back. A failed *commits* fetch still
+   *  leaves a good PR observation, and discarding it would make the next cycle
+   *  diff against a stale baseline for a half-success. */
+  prsOk: boolean;
   prs: PrSnapshot[];
   events: FeedEvent[];
   lastCommitSha: string | null;
@@ -93,6 +97,7 @@ async function hydrate(
 ): Promise<Hydrated> {
   const result: Hydrated = {
     slug,
+    prsOk: false,
     prs: [],
     events: [],
     lastCommitSha: mark?.lastCommitSha ?? null,
@@ -106,6 +111,7 @@ async function hydrate(
     return result;
   }
   result.prs = listed.prs.map((raw) => prSnapshotFrom(slug, raw, now));
+  result.prsOk = true;
 
   // A repo seen for the first time is baselined rather than replayed, so adding
   // a busy repo does not announce forty old pull requests as breaking news.
@@ -205,15 +211,16 @@ export async function runCycle(options: CycleOptions = {}): Promise<CycleStatus>
   // The new observation: fresh snapshots for what was polled, carried forward
   // for what was not. Dropping the rest would make every unpolled repo look
   // unseen next cycle and suppress its events.
-  const carried = previousPrs.filter((pr) => !polledSlugs.has(pr.repo));
-  const nextPrs = [...hydrated.flatMap((h) => (h.error ? [] : h.prs)), ...carried];
-  const carriedForFailed = previousPrs.filter(
-    (pr) => polledSlugs.has(pr.repo) && hydrated.some((h) => h.slug === pr.repo && h.error),
-  );
+  // Keep the fresh observation wherever the PR list arrived — including repos
+  // whose trunk-commit fetch failed afterwards, since their events were already
+  // derived and appended from exactly these snapshots.
+  const refreshed = new Set(hydrated.filter((h) => h.prsOk).map((h) => h.slug));
+  const carried = previousPrs.filter((pr) => !refreshed.has(pr.repo));
+  const nextPrs = [...hydrated.flatMap((h) => (h.prsOk ? h.prs : [])), ...carried];
 
   writeFeedIndex({
     events: readRecentEvents(FEED_INDEX_LIMIT),
-    prs: [...nextPrs, ...carriedForFailed],
+    prs: nextPrs,
     updatedAt: new Date().toISOString(),
   });
 
