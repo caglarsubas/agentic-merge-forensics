@@ -24,13 +24,12 @@ services:
       # exhaust another product's scheduler slot. Needs a key — see the README
       # for the launch line that reads one out of the engine's .auth_keys.json.
       #
-      # Ollama serves the same gemma4:26b directly at
-      # http://host.docker.internal:11434 with no key and, measured, ~1.1s
-      # instead of 16-45s: its API accepts `think: false`, which the engine's
-      # OpenAI path cannot, so the reasoning trace is skipped rather than
-      # generated and discarded. Switch if latency matters more than accounting.
+      # Ollama serves the same model directly at http://host.docker.internal:11434
+      # with no key. For the default ministral-3:8b the two are about as fast
+      # (~5s warm). Ollama only pulls ahead with a reasoning model like gemma4:
+      # its API accepts `think: false`, which the engine's OpenAI path cannot.
       MERGE_FORENSICS_LLM_URL: ${MERGE_FORENSICS_LLM_URL:-http://host.docker.internal:8080/v1}
-      MERGE_FORENSICS_LLM_MODEL: ${MERGE_FORENSICS_LLM_MODEL:-gemma4:26b}
+      MERGE_FORENSICS_LLM_MODEL: ${MERGE_FORENSICS_LLM_MODEL:-ministral-3:8b}
       MERGE_FORENSICS_LLM_KEY: ${MERGE_FORENSICS_LLM_KEY:-}
       # "ollama" or "openai"; inferred from the URL when unset.
       MERGE_FORENSICS_LLM_API: ${MERGE_FORENSICS_LLM_API:-}

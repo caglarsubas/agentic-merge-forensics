@@ -147,15 +147,16 @@ export function llmConfig(): LlmConfig {
   return {
     baseUrl,
     flavour,
-    model: process.env.MERGE_FORENSICS_LLM_MODEL ?? "gemma4:26b",
+    model: process.env.MERGE_FORENSICS_LLM_MODEL ?? "ministral-3:8b",
     apiKey: process.env.MERGE_FORENSICS_LLM_KEY ?? null,
     timeoutMs: Number(process.env.MERGE_FORENSICS_LLM_TIMEOUT_MS ?? 45_000),
   };
 }
 
 /**
- * gemma4 is a reasoning model, and the two paths differ in what they can do
- * about that.
+ * The default, ministral-3:8b, has no reasoning trace, so neither path below
+ * pays for one. The settings matter when a reasoning model such as gemma4 is
+ * configured instead, and the two paths differ in what they can do about it.
  *
  * Ollama takes `think: false` and stops generating the trace altogether: about
  * 60 completion tokens and a second for a two-sentence answer.
