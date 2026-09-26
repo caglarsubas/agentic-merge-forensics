@@ -88,6 +88,7 @@ const WRONG: Array<[SummaryFacts, string]> = [
   [REAL, "Six PRs conflict: five from codex in o/labs and o/onion, one from refik-ergun in p/tfc. One CI check is failing in o/lab."],
   [MIXED, "Claude's PR in a/api (#44) conflicts. Three PRs fail CI: two from claude in a/api and one from cursor in a/web."],
   [MIXED, "Codex's PR in a/web conflicts with its base branch. Three PRs fail CI: two from claude in a/api and one from cursor in a/web."],
+  [REAL, "Five PRs from codex in o/labs and o/onion and one from refik-ergun in p/tfc are failing CI."],
 ];
 
 const RIGHT: Array<[SummaryFacts, string]> = [
@@ -100,6 +101,11 @@ const RIGHT: Array<[SummaryFacts, string]> = [
   [SINGLE, "Three PRs conflict, all from claude, in a/api and a/web."],
   [QUIET, "No conflicts or failing checks. Two PRs remain open in o/app, and the last 7 days saw 10 merged, 6 opened and 2 direct pushes."],
   [QUIET, "Nothing needs attention: activity was entirely in o/app, with no other conflicts to review."],
+  // Both groups in one sentence, the conflicts without the word "conflict".
+  [REAL, "Five PRs from codex in o/labs and o/onion and one from refik-ergun in p/tfc are stuck, and dependabot's PR in o/lab is failing CI."],
+  [REAL, "Six PRs are blocked—five from codex in o/labs and o/onion, one from refik-ergun in p/tfc—while dependabot's PR in o/lab fails CI."],
+  [REAL, "Six PRs are stuck in conflicts—five from codex in o/labs and o/onion, plus one from refik-ergun in p/tfc—and one from dependabot in o/lab is failing CI."],
+  [MIXED, "Claude's PR in a/api conflicts with the base branch, and their other a/api PR has failing CI. Codex's PR in a/web also conflicts, while cursor's PR in a/web fails CI."],
 ];
 
 describe("checkSummary rejects numbers attached to the wrong thing", () => {
