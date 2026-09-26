@@ -87,9 +87,12 @@ export async function POST(request: Request) {
   const started = Date.now();
   try {
     const written = await writeSummary(facts, config);
-    // Worth seeing in the logs: which claims the model keeps getting wrong.
-    written.rejected.forEach((problems, i) =>
-      console.warn(`summary ${key}: draft ${i + 1} rejected — ${problems.join("; ")}`),
+    // Worth seeing in the logs: which claims the model keeps getting wrong, and
+    // the draft itself, so a rejection can be told apart from a false alarm.
+    written.rejected.forEach(({ draft, problems }, i) =>
+      console.warn(
+        `summary ${key}: draft ${i + 1} rejected — ${problems.join("; ")}\n  draft: ${JSON.stringify(draft)}`,
+      ),
     );
     const result: SummaryResult = {
       summary: written.text,

@@ -30,7 +30,7 @@ type Token =
   | { kind: "word"; text: string }
   | { kind: "comma" }
   | { kind: "ref"; number: number }
-  | { kind: "stop"; end: boolean };
+  | { kind: "stop"; end: boolean; char: string };
 
 type Num = Extract<Token, { kind: "num" }>;
 
@@ -46,15 +46,17 @@ const AMBIGUOUS = new Set(["one", "single"]);
 const ALL_WORDS = new Set(["all", "every", "entirely", "exclusively", "solely"]);
 const CONFLICT_WORDS = new Set(["conflict", "conflicts", "conflicting", "conflicted", "cleanly"]);
 const FAILING_WORDS = new Set(["fail", "fails", "failing", "failed", "failure", "failures", "ci", "check", "checks"]);
+/** Words that start an independent clause after a comma or dash: "…are stuck, and X is failing CI". */
+const JOINERS = new Set(["and", "but", "while", "whereas", "yet"]);
 
 class Reader {
   readonly tokens: Token[] = [];
   readonly problems = new Set<string>();
-  private readonly sentenceOf: number[] = [];
+  private readonly clauseOf: number[] = [];
   private readonly topics: Array<Pr[][]> = [];
   private readonly aboutGroups: boolean[] = [];
-  /** PR numbers the text names, and the sentence each is in. */
-  readonly refs: Array<{ number: number; repo: string | null; sentence: number }> = [];
+  /** PR numbers the text names, and the clause each is in. */
+  readonly refs: Array<{ number: number; repo: string | null; clause: number }> = [];
 
   constructor(
     text: string,
@@ -67,36 +69,61 @@ class Reader {
       if (filter.startsWith("agents: ")) filter.slice(8).split(", ").forEach((c) => coders.add(c));
     }
     const repos = new Set([...conflicting, ...failing].map((pr) => pr.repo).concat(facts.repos));
-    // Which group each sentence is about, from the words it uses. PR numbers
-    // are set aside here: they name a PR, they do not count anything.
-    let sentence = 0;
-    let words = new Set<string>();
-    const close = () => {
-      const c = [...words].some((w) => CONFLICT_WORDS.has(w));
-      const f = [...words].some((w) => FAILING_WORDS.has(w));
-      const topic = c && !f ? [conflicting] : f && !c ? [failing] : [conflicting, failing];
-      this.topics[sentence] = topic.filter((group) => group.length);
-      this.aboutGroups[sentence] = c || f;
-      sentence++;
-      words = new Set();
+
+    // Which group each clause is about, from the words it uses. Clauses, not
+    // sentences: "codex's five are stuck, and dependabot's PR is failing CI"
+    // talks about both groups, and only its second half is about CI. A clause
+    // after ":" or a dash spells out the one before it and inherits its topic;
+    // one after ", and", "while" or ";" stands on its own.
+    const clauses: Array<{ words: Set<string>; parent: number | null }> = [{ words: new Set(), parent: null }];
+    let current = 0;
+    const open = (parent: number | null) => {
+      clauses.push({ words: new Set(), parent });
+      current = clauses.length - 1;
     };
-    for (const token of tokenise(text, [...repos], [...coders])) {
+    const raw = tokenise(text, [...repos], [...coders]);
+    for (const [k, token] of raw.entries()) {
+      const next = raw[k + 1];
+      const joins = next?.kind === "word" && JOINERS.has(next.text);
       if (token.kind === "ref") {
         const before = this.tokens.at(-1);
-        this.refs.push({ number: token.number, repo: before?.kind === "repo" ? before.name : null, sentence });
+        this.refs.push({ number: token.number, repo: before?.kind === "repo" ? before.name : null, clause: current });
         continue;
       }
+      if (token.kind === "stop") {
+        if (token.end || token.char === ";") open(null);
+        else if (token.char === ":") open(current);
+        else if ("—–-".includes(token.char.trim())) open(joins ? null : current);
+      } else if (token.kind === "comma" && joins) {
+        open(null);
+      } else if (token.kind === "word" && (token.text === "while" || token.text === "whereas")) {
+        open(null);
+      }
       this.tokens.push(token);
-      this.sentenceOf.push(sentence);
-      if (token.kind === "word") words.add(token.text);
-      if (token.kind === "stop" && token.end) close();
+      this.clauseOf.push(current);
+      if (token.kind === "word") clauses[current].words.add(token.text);
     }
-    close();
+
+    const own = (c: number) => {
+      const words = [...clauses[c].words];
+      return { c: words.some((w) => CONFLICT_WORDS.has(w)), f: words.some((w) => FAILING_WORDS.has(w)) };
+    };
+    for (let c = 0; c < clauses.length; c++) {
+      let at: number | null = c;
+      let found = own(c);
+      while (!found.c && !found.f && at !== null) {
+        at = clauses[at].parent;
+        if (at !== null) found = own(at);
+      }
+      const topic = found.c && !found.f ? [conflicting] : found.f && !found.c ? [failing] : [conflicting, failing];
+      this.topics[c] = topic.filter((group) => group.length);
+      this.aboutGroups[c] = found.c || found.f;
+    }
 
     // "acme/web#12 is failing CI" must name a PR that is failing CI.
     for (const ref of this.refs) {
       const matches = (pr: Pr) => refersTo(ref, pr);
-      if (this.topics[ref.sentence].some((group) => group.some(matches))) continue;
+      if (this.topics[ref.clause].some((group) => group.some(matches))) continue;
       const label = `${ref.repo ?? ""}#${ref.number}`;
       this.problems.add(
         [conflicting, failing].some((group) => group.some(matches))
@@ -106,19 +133,19 @@ class Reader {
     }
   }
 
-  /** The PR groups the sentence containing token `i` is talking about. */
+  /** The PR groups the clause containing token `i` is talking about. */
   groupsAt(i: number): Pr[][] {
-    return this.topics[this.sentenceOf[i]] ?? [];
+    return this.topics[this.clauseOf[i]] ?? [];
   }
 
-  /** The PR groups sentence number `sentence` is talking about. */
-  topicOf(sentence: number): Pr[][] {
-    return this.topics[sentence] ?? [];
+  /** The PR groups clause number `clause` is talking about. */
+  topicOf(clause: number): Pr[][] {
+    return this.topics[clause] ?? [];
   }
 
-  /** Whether that sentence is about conflicts or CI at all, rather than activity. */
+  /** Whether that clause is about conflicts or CI at all, rather than activity. */
   isAboutGroups(i: number): boolean {
-    return this.aboutGroups[this.sentenceOf[i]] ?? false;
+    return this.aboutGroups[this.clauseOf[i]] ?? false;
   }
 
   /** Whether `repos` names every repo with activity and every repo with a flagged PR,
@@ -226,7 +253,7 @@ function tokenise(text: string, repos: string[], coders: string[]): Token[] {
     else if (raw in WORDS) tokens.push({ kind: "num", value: WORDS[raw], text: raw });
     else if (raw === ",") tokens.push({ kind: "comma" });
     else if (/^[a-z']/.test(raw)) tokens.push({ kind: "word", text: raw });
-    else tokens.push({ kind: "stop", end: /[.!?]/.test(raw) });
+    else tokens.push({ kind: "stop", end: /[.!?]/.test(raw), char: raw.trim() || raw });
   }
   return tokens;
 }
@@ -524,18 +551,32 @@ function checkInventedNames(text: string, reader: Reader): void {
  * refik-ergun's conflict silently left out.
  */
 function checkCompleteness(reader: Reader): void {
+  const t = reader.tokens;
+  // "claude's PR conflicts, and their other PR fails CI" names claude twice.
+  const pronouns = new Set(["their", "they", "them", "its", "his", "her"]);
+  const antecedent = (i: number): string | null => {
+    for (let j = i - 1; j >= 0; j--) {
+      const token = t[j];
+      if (token.kind === "stop" && token.end) return null;
+      if (token.kind === "coder") return token.name;
+    }
+    return null;
+  };
   const groups = [
     [reader.conflicting, "conflicting"],
     [reader.failing, "failing-CI"],
   ] as const;
   for (const [group, label] of groups) {
     for (const coder of codersIn(group)) {
-      const named = reader.tokens.some(
-        (token, i) => token.kind === "coder" && token.name === coder && reader.groupsAt(i).includes(group),
+      const named = t.some(
+        (token, i) =>
+          reader.groupsAt(i).includes(group) &&
+          ((token.kind === "coder" && token.name === coder) ||
+            (token.kind === "word" && pronouns.has(token.text) && antecedent(i) === coder)),
       );
       const referenced = reader.refs.some(
         (ref) =>
-          reader.topicOf(ref.sentence).includes(group) &&
+          reader.topicOf(ref.clause).includes(group) &&
           group.some((pr) => pr.coder === coder && refersTo(ref, pr)),
       );
       if (named || referenced) continue;

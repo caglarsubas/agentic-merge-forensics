@@ -242,8 +242,8 @@ export interface WrittenSummary {
   text: string;
   source: "model" | "template";
   attempts: number;
-  /** What was wrong with each rejected draft, oldest first. */
-  rejected: string[][];
+  /** Each rejected draft and what was wrong with it, oldest first. */
+  rejected: Array<{ draft: string; problems: string[] }>;
 }
 
 /** One draft plus up to two corrections before giving up on the model. */
@@ -268,7 +268,7 @@ export async function writeSummary(
     { role: "user", content: `Summarise this activity:\n${JSON.stringify(facts, null, 1)}` },
   ];
   const started = Date.now();
-  const rejected: string[][] = [];
+  const rejected: WrittenSummary["rejected"] = [];
 
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
     let text: string;
@@ -280,7 +280,7 @@ export async function writeSummary(
     }
     const problems = checkSummary(text, facts);
     if (!problems.length) return { text, source: "model", attempts: attempt, rejected };
-    rejected.push(problems);
+    rejected.push({ draft: text, problems });
     // Corrections share the one time budget, so a slow model falls back
     // instead of tripling the wait.
     if (Date.now() - started > config.timeoutMs) break;
