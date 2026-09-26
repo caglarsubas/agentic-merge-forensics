@@ -114,7 +114,7 @@ is worse than no summary.
 It is off by default unless a model is reachable:
 
 ```bash
-MERGE_FORENSICS_LLM_URL=http://127.0.0.1:11434 MERGE_FORENSICS_LLM_MODEL=gemma4:26b npm run dev
+MERGE_FORENSICS_LLM_URL=http://127.0.0.1:11434 MERGE_FORENSICS_LLM_MODEL=ministral-3:8b npm run dev
 ```
 
 `MERGE_FORENSICS_LLM_URL` ending in `/v1` is treated as an OpenAI-compatible
@@ -130,23 +130,25 @@ engine's key file at launch, so it never lands in this repo:
 MERGE_FORENSICS_LLM_KEY=$(node -pe 'require("/path/to/llm_inference_engine_v1/.auth_keys.json").find(k=>k.tenant==="merge-forensics").key') GH_TOKEN=$(gh auth token) docker compose up -d
 ```
 
-That accounting is not free, and the numbers are worth knowing. The engine
-serves the identical model, but its OpenAI-compatible path cannot switch the
-reasoning trace off — `reasoning_effort: "none"` and
+The default model is `ministral-3:8b`, which has no reasoning trace: a
+two-sentence summary costs about 30 completion tokens and ~5s warm through
+either the engine or Ollama. The tenant scheduler's 30s queue timeout still
+applies, so point `MERGE_FORENSICS_LLM_URL` at `http://host.docker.internal:11434`
+to use Ollama directly if the engine is busy.
+
+A reasoning model changes that. The engine's OpenAI-compatible path cannot
+switch the trace off — `reasoning_effort: "none"` and
 `chat_template_kwargs.thinking=false` are both accepted and neither works, so
-`reasoning_content` returns empty while 1500-2700 completion tokens are spent on
-a two-sentence answer. That is 16-45s per summary against Ollama's ~1.1s, and
-the tenant scheduler's 30s queue timeout means two summaries arriving together
-can still collide even on a private tenant. Point `MERGE_FORENSICS_LLM_URL` at
-`http://host.docker.internal:11434` to use Ollama directly when latency matters
-more than accounting.
+with gemma4:26b `reasoning_content` returns empty while 1500-2700 completion
+tokens are spent on a two-sentence answer: 16-45s per summary against Ollama's
+~1.1s with `think: false`.
 
 Summaries are cached on a hash of the derived facts, not on the request. The
-dashboard re-polls every ten seconds, and re-running a 26B model each time to
+dashboard re-polls every ten seconds, and re-running a model each time to
 describe data that has not moved would be waste; a changed window, a changed
 filter or a new event misses the cache and re-asks, while a quiet poll is free.
 
-Two things worth knowing. Reasoning models need their trace turned off or they
+Two things worth knowing. Reasoning models, if you configure one, need their trace turned off or they
 spend the whole token budget thinking and return nothing — measured with
 gemma4:26b at 900 tokens of reasoning and an empty answer, which is why the
 Ollama path sends `think: false`. And a model bound to `127.0.0.1` is not
