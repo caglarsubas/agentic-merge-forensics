@@ -35,11 +35,25 @@ export interface SummaryFacts {
   directPushes: number;
   ciFailures: number;
   openPrs: number;
-  conflictingNow: string[];
-  failingCiNow: string[];
-  byCoder: Array<[string, number]>;
+  conflictingNow: PrGroup;
+  failingCiNow: PrGroup;
   repos: string[];
   filtersApplied: string[];
+}
+
+/**
+ * A set of open PRs whose counts are already written out as a phrase. Given a
+ * bare list, the model counted and grouped it badly: six conflicts, five of them
+ * codex's, came back as "six PRs, all from codex". Given the counts as separate
+ * coder and repo splits, it still recombined them wrongly ("codex has 6", "five
+ * in repo X" when it was four and one), so repos are named without counts.
+ * Copying a finished phrase is the one thing a small model does reliably.
+ */
+export interface PrGroup {
+  count: number;
+  /** e.g. "6 PRs: 5 from codex, in a/x and a/y; 1 from bob, in b/z". */
+  description: string;
+  prs: string[];
 }
 
 export interface SummaryResult {
@@ -59,11 +73,24 @@ const SYSTEM_PROMPT = [
   "Two or three sentences. Plain English. No bullet points, no headings, no markdown,",
   "no preamble, no sign-off.",
   "",
-  "Lead with whatever needs a human decision — a conflict, failing checks, one agent",
-  "rewriting another's work. If nothing needs attention, say so plainly and briefly.",
+  "Lead with whatever needs a human decision: conflicting PRs, then failing checks.",
+  "If nothing needs attention, say so plainly and briefly.",
   "",
   "Use ONLY the facts in the data. Never invent a repository name, a pull request",
-  "number or a count. If a list is empty, it means none, not unknown.",
+  "number, a cause or a count. An empty list means none, not unknown.",
+  "",
+  "Every number is already counted and worded for you: conflictingNow.description",
+  "and failingCiNow.description say exactly how many, from whom and where.",
+  "Keep each number with the coder or repo it is paired with there. You may shorten",
+  "or reword, but never regroup, recount, add numbers together or estimate. If no",
+  "field gives a number, say it without one. Say \"all\", \"every\", \"only\" or",
+  "\"entirely\" about a group only when its description does. When you say where a",
+  "coder's PRs are, name every repo the description lists for them, or none. Repos",
+  "carry no counts in the data; name them without numbers.",
+  "",
+  "A conflict means the PR no longer merges cleanly into its base branch. The data",
+  "does not say what it conflicts with, so never say it clashes with, overlaps or",
+  "rewrites another agent's or PR's work.",
 ].join("\n");
 
 /** Only what the model is allowed to talk about, already counted. */
@@ -87,8 +114,8 @@ export function extractFacts(
     (!filter.repos?.length || filter.repos.includes(pr.repo)) &&
     (!filter.coders?.length || filter.coders.includes(pr.coder));
 
-  const counts = new Map<string, number>();
-  for (const event of inWindow) counts.set(event.coder, (counts.get(event.coder) ?? 0) + 1);
+  const conflicting = open.filter((pr) => scoped(pr) && pr.conflict === "conflicting");
+  const failing = open.filter((pr) => scoped(pr) && pr.ci === "failing");
 
   const filtersApplied: string[] = [];
   if (filter.repos?.length) filtersApplied.push(`repositories: ${filter.repos.join(", ")}`);
@@ -104,16 +131,52 @@ export function extractFacts(
     directPushes: inWindow.filter((event) => event.kind === "push").length,
     ciFailures: inWindow.filter((event) => event.kind === "ci-failed").length,
     openPrs: open.filter(scoped).length,
-    conflictingNow: open
-      .filter((pr) => scoped(pr) && pr.conflict === "conflicting")
-      .map((pr) => `${pr.repo}#${pr.number} by ${pr.coder}`),
-    failingCiNow: open
-      .filter((pr) => scoped(pr) && pr.ci === "failing")
-      .map((pr) => `${pr.repo}#${pr.number} by ${pr.coder} (${pr.ciFailing} failing)`),
-    byCoder: [...counts].sort((a, b) => b[1] - a[1]),
+    conflictingNow: group(conflicting, (pr) => `${pr.repo}#${pr.number} by ${pr.coder}`),
+    failingCiNow: group(
+      failing,
+      (pr) =>
+        `${pr.repo}#${pr.number} by ${pr.coder} ` +
+        `(${pr.ciFailing} ${pr.ciFailing === 1 ? "check" : "checks"} failing)`,
+    ),
     repos: [...new Set(inWindow.map((event) => event.repo))],
     filtersApplied,
   };
+}
+
+/** Key → count, largest first. */
+function tally<T>(items: readonly T[], key: (item: T) => string): Array<[string, number]> {
+  const counts = new Map<string, number>();
+  for (const item of items) counts.set(key(item), (counts.get(key(item)) ?? 0) + 1);
+  return [...counts].sort((a, b) => b[1] - a[1]);
+}
+
+function group(prs: readonly PrSnapshot[], label: (pr: PrSnapshot) => string): PrGroup {
+  return { count: prs.length, description: describe(prs), prs: prs.map(label) };
+}
+
+function describe(prs: readonly PrSnapshot[]): string {
+  if (prs.length === 0) return "none";
+  const byCoder = tally(prs, (pr) => pr.coder).map(([coder, n]) => {
+    const repos = tally(
+      prs.filter((pr) => pr.coder === coder),
+      (pr) => pr.repo,
+    ).map(([repo]) => repo);
+    return { coder, n, where: `in ${and(repos)}` };
+  });
+  const total = `${prs.length} ${prs.length === 1 ? "PR" : "PRs"}`;
+  if (byCoder.length === 1) {
+    const [only] = byCoder;
+    const who = prs.length === 1 ? `from ${only.coder}` : `all from ${only.coder}`;
+    return `${total}, ${who}, ${only.where}`;
+  }
+  const parts = byCoder.map(({ coder, n, where }) => `${n} from ${coder}, ${where}`);
+  return `${total}: ${parts.join("; ")}`;
+}
+
+function and(items: string[]): string {
+  return items.length > 1
+    ? `${items.slice(0, -1).join(", ")} and ${items[items.length - 1]}`
+    : items[0];
 }
 
 /** Identical facts must produce an identical key, so polling costs nothing. */
