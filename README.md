@@ -148,6 +148,19 @@ dashboard re-polls every ten seconds, and re-running a model each time to
 describe data that has not moved would be waste; a changed window, a changed
 filter or a new event misses the cache and re-asks, while a quiet poll is free.
 
+Every draft is checked against the facts before it is shown
+(`src/feed/summary-check.ts`). The check reads each number together with the
+coder, repo or total the sentence attaches it to, so "five from codex in X and
+one in Y" fails when codex has four in X, even though five and one both appear
+in the data. It also rejects "all from codex" when someone else is in the
+group, PR numbers named under the wrong group, "no merges" when there were
+some, and made-up names like "agent-001". A rejected draft goes back to the
+model with the specific problems listed, up to two times. If no draft passes,
+the panel shows the facts written out plainly and says so. Rejections are
+logged as `summary <key>: draft N rejected — …`. Measured against
+`ministral-3:8b` on four scenarios, about one draft in four needs a
+correction, and the plain fallback was never needed.
+
 Two things worth knowing. Reasoning models, if you configure one, need their trace turned off or they
 spend the whole token budget thinking and return nothing — measured with
 gemma4:26b at 900 tokens of reasoning and an empty answer, which is why the
