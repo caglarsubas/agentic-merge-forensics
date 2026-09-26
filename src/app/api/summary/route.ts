@@ -75,6 +75,8 @@ export async function POST(request: Request) {
       facts,
       fingerprint: key,
       model: config.model,
+      source: "template",
+      attempts: 0,
       cached: false,
       elapsedMs: 0,
     };
@@ -84,12 +86,18 @@ export async function POST(request: Request) {
 
   const started = Date.now();
   try {
-    const summary = await writeSummary(facts, config);
+    const written = await writeSummary(facts, config);
+    // Worth seeing in the logs: which claims the model keeps getting wrong.
+    written.rejected.forEach((problems, i) =>
+      console.warn(`summary ${key}: draft ${i + 1} rejected — ${problems.join("; ")}`),
+    );
     const result: SummaryResult = {
-      summary,
+      summary: written.text,
       facts,
       fingerprint: key,
       model: config.model,
+      source: written.source,
+      attempts: written.attempts,
       cached: false,
       elapsedMs: Date.now() - started,
     };

@@ -14,6 +14,7 @@
  * number in an executive summary is worse than no summary at all.
  */
 import { createHash } from "node:crypto";
+import { checkSummary, templateSummary } from "./summary-check";
 import type { FeedEvent, PrSnapshot } from "./types";
 
 export interface SummaryFilter {
@@ -62,6 +63,11 @@ export interface SummaryResult {
   /** Stable over identical facts, so a poll that changed nothing can reuse it. */
   fingerprint: string;
   model: string;
+  /** "template" when every model draft failed the check and the facts were
+   *  written out plainly instead. */
+  source: "model" | "template";
+  /** Model calls made, including rejected drafts. */
+  attempts: number;
   cached: boolean;
   elapsedMs: number;
 }
@@ -232,11 +238,68 @@ export function llmConfig(): LlmConfig {
  * cover thinking the caller never sees — at max_tokens 2000 it lands right on
  * the edge and intermittently returns nothing at all.
  */
+export interface WrittenSummary {
+  text: string;
+  source: "model" | "template";
+  attempts: number;
+  /** What was wrong with each rejected draft, oldest first. */
+  rejected: string[][];
+}
+
+/** One draft plus up to two corrections before giving up on the model. */
+const MAX_ATTEMPTS = 3;
+
+type Message = { role: "system" | "user" | "assistant"; content: string };
+
+/**
+ * Asks for a summary, checks every number in it against the facts, and on a
+ * mismatch tells the model exactly what was wrong and asks again. If no draft
+ * passes, the facts are written out plainly rather than showing a wrong one.
+ *
+ * Only the first call's failure propagates — that means the model is down or
+ * unreachable. A failure on a correction round falls back like a rejection.
+ */
 export async function writeSummary(
   facts: SummaryFacts,
   config: LlmConfig = llmConfig(),
-): Promise<string> {
-  const user = `Summarise this activity:\n${JSON.stringify(facts, null, 1)}`;
+): Promise<WrittenSummary> {
+  const messages: Message[] = [
+    { role: "system", content: SYSTEM_PROMPT },
+    { role: "user", content: `Summarise this activity:\n${JSON.stringify(facts, null, 1)}` },
+  ];
+  const started = Date.now();
+  const rejected: string[][] = [];
+
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+    let text: string;
+    try {
+      text = await chat(messages, config);
+    } catch (caught) {
+      if (attempt === 1) throw caught;
+      break;
+    }
+    const problems = checkSummary(text, facts);
+    if (!problems.length) return { text, source: "model", attempts: attempt, rejected };
+    rejected.push(problems);
+    // Corrections share the one time budget, so a slow model falls back
+    // instead of tripling the wait.
+    if (Date.now() - started > config.timeoutMs) break;
+    messages.push(
+      { role: "assistant", content: text },
+      {
+        role: "user",
+        content:
+          `That summary has errors:\n${problems.map((p) => `- ${p}`).join("\n")}\n` +
+          "Write it again. Take every number from conflictingNow.description and " +
+          "failingCiNow.description exactly as written there, with the same coder and " +
+          "repos, and state no number the data does not give.",
+      },
+    );
+  }
+  return { text: templateSummary(facts), source: "template", attempts: rejected.length, rejected };
+}
+
+async function chat(messages: Message[], config: LlmConfig): Promise<string> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), config.timeoutMs);
 
@@ -251,10 +314,7 @@ export async function writeSummary(
           stream: false,
           think: false,
           options: { temperature: 0.2, num_predict: 400 },
-          messages: [
-            { role: "system", content: SYSTEM_PROMPT },
-            { role: "user", content: user },
-          ],
+          messages,
         }
       : {
           model: config.model,
@@ -262,10 +322,7 @@ export async function writeSummary(
           temperature: 0.2,
           max_tokens: 4000,
           reasoning_effort: "none",
-          messages: [
-            { role: "system", content: SYSTEM_PROMPT },
-            { role: "user", content: user },
-          ],
+          messages,
         };
 
     const response = await fetch(url, {

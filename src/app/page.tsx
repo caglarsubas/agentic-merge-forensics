@@ -155,7 +155,13 @@ export default function Activity() {
   const [comboIndex, setComboIndex] = useState(0);
 
   const [summary, setSummary] = useState<string | null>(null);
-  const [summaryMeta, setSummaryMeta] = useState<{ ms: number; cached: boolean; model: string } | null>(null);
+  const [summaryMeta, setSummaryMeta] = useState<{
+    ms: number;
+    cached: boolean;
+    model: string;
+    source: "model" | "template";
+    attempts: number;
+  } | null>(null);
   const [summaryError, setSummaryError] = useState<string | null>(null);
   const [summaryLoading, setSummaryLoading] = useState(false);
 
@@ -437,6 +443,8 @@ export default function Activity() {
             elapsedMs?: number;
             cached?: boolean;
             model?: string;
+            source?: "model" | "template";
+            attempts?: number;
           };
           if (!response.ok) throw new Error(data.error ?? `summary failed (${response.status})`);
           setSummary(data.summary ?? "");
@@ -444,6 +452,8 @@ export default function Activity() {
             ms: data.elapsedMs ?? 0,
             cached: Boolean(data.cached),
             model: data.model ?? "",
+            source: data.source ?? "model",
+            attempts: data.attempts ?? 1,
           });
           setSummaryError(null);
         } catch (caught) {
@@ -672,7 +682,7 @@ export default function Activity() {
             {summaryLoading
               ? "writing…"
               : summaryMeta
-                ? `${summaryMeta.model}${summaryMeta.cached ? " · cached" : ` · ${(summaryMeta.ms / 1000).toFixed(1)}s`}`
+                ? summaryLabel(summaryMeta)
                 : ""}
           </span>
         </div>
@@ -1167,4 +1177,23 @@ export default function Activity() {
       </div>
     </div>
   );
+}
+
+/**
+ * Says where the summary came from. A template means every model draft named a
+ * number the facts did not support, so the facts are shown plainly instead.
+ */
+function summaryLabel(meta: {
+  ms: number;
+  cached: boolean;
+  model: string;
+  source: "model" | "template";
+  attempts: number;
+}): string {
+  const timing = meta.cached ? "cached" : `${(meta.ms / 1000).toFixed(1)}s`;
+  if (meta.source === "template") {
+    return meta.attempts ? `${meta.model} drafts failed the number check · facts only · ${timing}` : timing;
+  }
+  const corrected = meta.attempts > 1 ? ` · corrected ${meta.attempts - 1}×` : "";
+  return `${meta.model}${corrected} · ${timing}`;
 }
