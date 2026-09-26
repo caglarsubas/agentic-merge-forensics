@@ -154,12 +154,20 @@ coder, repo or total the sentence attaches it to, so "five from codex in X and
 one in Y" fails when codex has four in X, even though five and one both appear
 in the data. It also rejects "all from codex" when someone else is in the
 group, PR numbers named under the wrong group, "no merges" when there were
-some, and made-up names like "agent-001". A rejected draft goes back to the
+some, and made-up names like "agent-001". It also rejects a summary that
+leaves someone out: every coder with a conflicting or failing PR has to be
+named in a sentence about that group. Dropping refik-ergun's one conflict
+while reporting codex's five reads as a clean bill of health for work that
+is not. A rejected draft goes back to the
 model with the specific problems listed, up to two times. If no draft passes,
 the panel shows the facts written out plainly and says so. Rejections are
 logged as `summary <key>: draft N rejected — …`. Measured against
 `ministral-3:8b` on four scenarios, about one draft in four needs a
 correction, and the plain fallback was never needed.
+
+Telling the model up front to "name every coder" made things worse: it
+started crediting coders with each other's PRs to fit them all in. The
+check and the correction message carry that rule instead.
 
 Two things worth knowing. Reasoning models, if you configure one, need their trace turned off or they
 spend the whole token budget thinking and return nothing — measured with

@@ -83,14 +83,19 @@ const WRONG: Array<[SummaryFacts, string]> = [
   [MIXED, "Claude's PR in a/api conflicts with its base branch. The a/web#12 PR from codex also fails CI."],
   [REAL, "One CI check is failing in o/lab (PR #999)."],
   [QUIET, "No conflicts. Two PRs remain open in o/app, one from agent-001 and one from agent-002."],
+  // Complete numbers, but someone is left out.
+  [REAL, "Five PRs from codex in o/labs and o/onion are in conflict. One CI check is failing in o/lab from dependabot."],
+  [REAL, "Six PRs conflict: five from codex in o/labs and o/onion, one from refik-ergun in p/tfc. One CI check is failing in o/lab."],
+  [MIXED, "Claude's PR in a/api (#44) conflicts. Three PRs fail CI: two from claude in a/api and one from cursor in a/web."],
+  [MIXED, "Codex's PR in a/web conflicts with its base branch. Three PRs fail CI: two from claude in a/api and one from cursor in a/web."],
 ];
 
 const RIGHT: Array<[SummaryFacts, string]> = [
   [REAL, "Six PRs conflict: five from codex in o/labs and o/onion, and one from refik-ergun in p/tfc. One CI check is failing in o/lab from dependabot (PR #124)."],
-  [REAL, "Five PRs from codex (four in o/labs, one in o/onion) and one from refik-ergun (p/tfc) are in conflict. No other urgent issues."],
-  [REAL, "The six conflicting PRs, five from codex and one from refik-ergun, need review across three repos."],
+  [REAL, "Five PRs from codex (four in o/labs, one in o/onion) and one from refik-ergun (p/tfc) are in conflict. Dependabot's PR in o/lab fails CI."],
+  [REAL, "The six conflicting PRs, five from codex and one from refik-ergun, need review across three repos. One CI check is failing on o/lab#124."],
   [MIXED, "Two PRs are stuck: one from claude in a/api and one from codex in a/web. Three PRs are failing CI: two from claude in a/api and one from cursor in a/web (3 checks failing)."],
-  [MIXED, "Claude's a/api#41 and a/api#44 (2 and 1 checks) and cursor's a/web#9 (3 checks) are failing CI, six checks in total."],
+  [MIXED, "Claude's a/api#44 and codex's a/web#12 conflict. Claude's a/api#41 and a/api#44 (2 and 1 checks) and cursor's a/web#9 (3 checks) are failing CI, six checks in total."],
   [SINGLE, "Claude has three PRs stuck in conflict, two in a/api and one in a/web. No CI failures. 6 PRs merged in the last 7 days."],
   [SINGLE, "Three PRs conflict, all from claude, in a/api and a/web."],
   [QUIET, "No conflicts or failing checks. Two PRs remain open in o/app, and the last 7 days saw 10 merged, 6 opened and 2 direct pushes."],
@@ -126,7 +131,9 @@ describe("writeSummary", () => {
     const fetch = vi
       .fn()
       .mockResolvedValueOnce(reply("Six PRs are in conflict, all from codex."))
-      .mockResolvedValueOnce(reply("Six PRs conflict: five from codex and one from refik-ergun."));
+      .mockResolvedValueOnce(
+        reply("Six PRs conflict: five from codex and one from refik-ergun. Dependabot's PR fails CI."),
+      );
     vi.stubGlobal("fetch", fetch);
 
     const written = await writeSummary(REAL, config);
